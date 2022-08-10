@@ -1,5 +1,7 @@
 'use strict';
 
+const PLAY_RESULT_FAILURE = 0;
+
 var ReactNative = require('react-native');
 var RNSound = ReactNative.NativeModules.RNSound;
 var IsAndroid = RNSound.IsAndroid;
@@ -108,7 +110,7 @@ Sound.prototype.play = function(onEnd) {
   if (this._loaded) {
     RNSound.play(this._key, onEnd ? (successfully) => onEnd(successfully) : null);
   } else {
-    onEnd && onEnd(false);
+    onEnd && onEnd(PLAY_RESULT_FAILURE);
   }
   return this;
 };
