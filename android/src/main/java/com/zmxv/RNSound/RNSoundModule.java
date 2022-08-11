@@ -36,6 +36,7 @@ import android.util.Log;
 
 public class RNSoundModule extends ReactContextBaseJavaModule implements AudioManager.OnAudioFocusChangeListener {
   Map<Double, MediaPlayer> playerPool = new HashMap<>();
+  Map<Double, Timer> timerPool = new HashMap<>();
   ReactApplicationContext context;
   final static Object NULL = null;
   String category;
@@ -45,7 +46,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
   Boolean wasPlayingBeforeFocusChange = false;
   private AudioFocusRequest audioFocusRequest;
   private boolean useAudioFocus = true;
-  private Timer audioCompletionTimer = null;
 
   private static final int PLAY_RESULT_FAILURE = 0;
   private static final int PLAY_RESULT_SUCCESS = 1;
@@ -65,6 +65,14 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     reactContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
             .emit("onPlayChange", params);
+  }
+
+  private void cancelTimer(Double key) {
+    Timer timer = this.timerPool.get(key);
+    if (timer != null) {
+      timer.cancel();
+      this.timerPool.put(key, null);
+    }
   }
 
   @Override
@@ -342,7 +350,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
           if (callbackWasCalled) {
             return;
           }
-          if (audioCompletionTimer != null) audioCompletionTimer.cancel();
+          cancelTimer(key);
           callbackWasCalled = true;
           try {
             callback.invoke(PLAY_RESULT_SUCCESS);
@@ -365,7 +373,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
         if (callbackWasCalled) {
           return true;
         }
-        if (audioCompletionTimer != null) audioCompletionTimer.cancel();
+        cancelTimer(key);
         callbackWasCalled = true;
         try {
           callback.invoke(PLAY_RESULT_SUCCESS);
@@ -379,27 +387,31 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
         return true;
       }
     });
-    player.start();
-    setOnPlay(true, key);
-    if (!player.isLooping()) {
-      // Fail safe. Schedule a timer 0.5 seconds after the sound should have been completed
-      // that will then call the callback if the timer has not yet been canceled by the
-      // onCompletion / onError so that if this happens the caller of play() will still get
-      // a callback and can then cleanup.
-      audioCompletionTimer = new Timer();
-      try {
-        audioCompletionTimer.schedule(new TimerTask() {
-          @Override
-          public synchronized void run() {
-            try {
-              callback.invoke(PLAY_RESULT_TIMED_OUT);
-            } catch(RuntimeException runtimeException) {
-              //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
+    synchronized(this) {
+      player.start();
+      setOnPlay(true, key);
+      if (!player.isLooping()) {
+        // Fail safe. Schedule a timer 0.5 seconds after the sound should have been completed
+        // that will then call the callback if the timer has not yet been canceled by the
+        // onCompletion / onError so that if this happens the caller of play() will still get
+        // a callback and can then cleanup.
+        Timer timer = new Timer();
+        this.timerPool.put(key, timer);
+        try {
+          timer.schedule(new TimerTask() {
+            @Override
+            public synchronized void run() {
+              try {
+                callback.invoke(PLAY_RESULT_TIMED_OUT);
+              } catch(RuntimeException runtimeException) {
+                //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
+              }
+              cancelTimer(key);
             }
-          }
-        }, player.getDuration() + 500);
-      } catch (IllegalArgumentException | IllegalStateException | NullPointerException e) {
-        Log.e("RNSoundModule", "ay timer not scheduled, Exception ", e);
+          }, player.getDuration() + 500);
+        } catch (IllegalArgumentException | IllegalStateException | NullPointerException e) {
+          Log.e("RNSoundModule", "timer not scheduled, Exception ", e);
+        }
       }
     }
   }

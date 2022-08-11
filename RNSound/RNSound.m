@@ -277,28 +277,30 @@ RCT_EXPORT_METHOD(play
         }
 
         [[self callbackPool] setObject:[callback copy] forKey:key];
-        if ([player play]) {
-            if (player.numberOfLoops == 0) {
-                dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-                dispatch_source_set_event_handler(timer, ^{
-                    @synchronized(self) {
-                        // On timer expiration complete the callback if still present as audio did not complete
-                        // using audioPlayerDidFinishPlaying for the content duration plus 0.5 seconds.
-                        RCTResponseSenderBlock callback = [self callbackForKey:key];
-                        if (callback) {
-                            callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_TIMED_OUT], nil]);
-                            [[self callbackPool] removeObjectForKey:key];
-                            [[self timerPool] removeObjectForKey:key];
+        @synchronized(self) {
+            if ([player play]) {
+                [self setOnPlay:YES forPlayerKey:key];
+                if (player.numberOfLoops == 0) {
+                    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+                    dispatch_source_set_event_handler(timer, ^{
+                        @synchronized(self) {
+                            // On timer expiration complete the callback if still present as audio did not complete
+                            // using audioPlayerDidFinishPlaying for the content duration plus 0.5 seconds.
+                            RCTResponseSenderBlock callback = [self callbackForKey:key];
+                            if (callback) {
+                                callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_TIMED_OUT], nil]);
+                                [[self callbackPool] removeObjectForKey:key];
+                                [[self timerPool] removeObjectForKey:key];
+                            }
                         }
-                    }
-                });
-                dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((player.duration + 0.5) * 1000000000)), DISPATCH_TIME_FOREVER, 0);
-                [[self timerPool] setObject:timer forKey:key];
-                dispatch_resume(timer);
+                    });
+                    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((player.duration + 0.5) * 1000000000)), DISPATCH_TIME_FOREVER, 0);
+                    [[self timerPool] setObject:timer forKey:key];
+                    dispatch_resume(timer);
+                }
+            } else {
+                callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_FAILURE], nil]);
             }
-            [self setOnPlay:YES forPlayerKey:key];
-        } else {
-            callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_FAILURE], nil]);
         }
     } else {
         callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_FAILURE], nil]);
