@@ -9,9 +9,14 @@
 @implementation RNSound {
     NSMutableDictionary *_playerPool;
     NSMutableDictionary *_callbackPool;
+    NSMutableDictionary *_timerPool;
 }
 
 @synthesize _key = _key;
+
+static int PLAY_RESULT_FAILURE = 0;
+static int PLAY_RESULT_SUCCESS = 1;
+static int PLAY_RESULT_TIMED_OUT = 2;
 
 - (void)audioSessionChangeObserver:(NSNotification *)notification {
     // For the AmiGO use cases it makes more sense to only stop playing a sound
@@ -54,6 +59,13 @@
     return _callbackPool;
 }
 
+- (NSMutableDictionary *)timerPool {
+    if (!_timerPool) {
+        _timerPool = [NSMutableDictionary new];
+    }
+    return _timerPool;
+}
+
 - (AVAudioPlayer *)playerForKey:(nonnull NSNumber *)key {
     return [[self playerPool] objectForKey:key];
 }
@@ -66,6 +78,10 @@
     return [[self callbackPool] objectForKey:key];
 }
 
+- (dispatch_source_t)timerForKey:(nonnull NSNumber *)key {
+    return [[self timerPool] objectForKey:key];
+}
+
 - (NSString *)getDirectory:(int)directory {
     return [NSSearchPathForDirectoriesInDomains(directory, NSUserDomainMask,
                                                 YES) firstObject];
@@ -75,14 +91,43 @@
                        successfully:(BOOL)flag {
     @synchronized(self) {
         NSNumber *key = [self keyForPlayer:player];
-        if (key == nil)
+        if (key == nil) {
             return;
+        }
+
+        dispatch_source_t timer = [self timerForKey:key];
+        if (timer) {
+            dispatch_source_cancel(timer);
+            [[self timerPool] removeObjectForKey:key];
+        }
 
         [self setOnPlay:NO forPlayerKey:key];
         RCTResponseSenderBlock callback = [self callbackForKey:key];
         if (callback) {
-            callback(
-                [NSArray arrayWithObjects:[NSNumber numberWithBool:flag], nil]);
+            int callbackResult = flag ? PLAY_RESULT_SUCCESS : PLAY_RESULT_FAILURE;
+            callback([NSArray arrayWithObjects:[NSNumber numberWithInt:callbackResult], nil]);
+            [[self callbackPool] removeObjectForKey:key];
+        }
+    }
+}
+
+- (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player
+                                 error:(NSError *)error {
+    @synchronized(self) {
+        NSNumber *key = [self keyForPlayer:player];
+        if (key == nil) {
+            return;
+        }
+        dispatch_source_t timer = [self timerForKey:key];
+        if (timer) {
+            dispatch_source_cancel(timer);
+            [[self timerPool] removeObjectForKey:key];
+        }
+
+        [self setOnPlay:NO forPlayerKey:key];
+        RCTResponseSenderBlock callback = [self callbackForKey:key];
+        if (callback) {
+            callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_FAILURE], nil]);
             [[self callbackPool] removeObjectForKey:key];
         }
     }
@@ -232,8 +277,33 @@ RCT_EXPORT_METHOD(play
         }
 
         [[self callbackPool] setObject:[callback copy] forKey:key];
-        [player play];
-        [self setOnPlay:YES forPlayerKey:key];
+        @synchronized(self) {
+            if ([player play]) {
+                [self setOnPlay:YES forPlayerKey:key];
+                if (player.numberOfLoops == 0) {
+                    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+                    dispatch_source_set_event_handler(timer, ^{
+                        @synchronized(self) {
+                            // On timer expiration complete the callback if still present as audio did not complete
+                            // using audioPlayerDidFinishPlaying for the content duration plus 0.5 seconds.
+                            RCTResponseSenderBlock callback = [self callbackForKey:key];
+                            if (callback) {
+                                callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_TIMED_OUT], nil]);
+                                [[self callbackPool] removeObjectForKey:key];
+                                [[self timerPool] removeObjectForKey:key];
+                            }
+                        }
+                    });
+                    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((player.duration + 0.5) * 1000000000)), DISPATCH_TIME_FOREVER, 0);
+                    [[self timerPool] setObject:timer forKey:key];
+                    dispatch_resume(timer);
+                }
+            } else {
+                callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_FAILURE], nil]);
+            }
+        }
+    } else {
+        callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_FAILURE], nil]);
     }
 }
 
@@ -265,6 +335,7 @@ RCT_EXPORT_METHOD(release : (nonnull NSNumber *)key) {
             [player stop];
             [[self callbackPool] removeObjectForKey:key];
             [[self playerPool] removeObjectForKey:key];
+            [[self timerPool] removeObjectForKey:key];
             NSNotificationCenter *notificationCenter =
                 [NSNotificationCenter defaultCenter];
             [notificationCenter removeObserver:self];

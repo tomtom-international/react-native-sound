@@ -28,12 +28,15 @@ import com.facebook.react.modules.core.ExceptionsManagerModule;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.io.IOException;
 
 import android.util.Log;
 
 public class RNSoundModule extends ReactContextBaseJavaModule implements AudioManager.OnAudioFocusChangeListener {
   Map<Double, MediaPlayer> playerPool = new HashMap<>();
+  Map<Double, Timer> timerPool = new HashMap<>();
   ReactApplicationContext context;
   final static Object NULL = null;
   String category;
@@ -43,6 +46,10 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
   Boolean wasPlayingBeforeFocusChange = false;
   private AudioFocusRequest audioFocusRequest;
   private boolean useAudioFocus = true;
+
+  private static final int PLAY_RESULT_FAILURE = 0;
+  private static final int PLAY_RESULT_SUCCESS = 1;
+  private static final int PLAY_RESULT_TIMED_OUT = 2;
 
   public RNSoundModule(ReactApplicationContext context) {
     super(context);
@@ -58,6 +65,14 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     reactContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
             .emit("onPlayChange", params);
+  }
+
+  private void cancelTimer(Double key) {
+    Timer timer = this.timerPool.get(key);
+    if (timer != null) {
+      timer.cancel();
+      this.timerPool.put(key, null);
+    }
   }
 
   @Override
@@ -255,11 +270,14 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     if (player == null) {
       setOnPlay(false, key);
       if (callback != null) {
-          callback.invoke(false);
+          callback.invoke(PLAY_RESULT_FAILURE);
       }
       return;
     }
     if (player.isPlaying()) {
+      if (callback != null) {
+          callback.invoke(PLAY_RESULT_FAILURE);
+      }
       return;
     }
 
@@ -310,8 +328,8 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
           if (audioFocusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
               if (callback != null) {
                   try {
-                      callback.invoke(true);
-                  } catch (Exception e) {
+                      callback.invoke(PLAY_RESULT_FAILURE);
+                  } catch(RuntimeException runtimeException) {
                       //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
                   }
               }
@@ -329,12 +347,15 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
       public synchronized void onCompletion(MediaPlayer mp) {
         if (!mp.isLooping()) {
           setOnPlay(false, key);
-          if (callbackWasCalled) return;
+          if (callbackWasCalled) {
+            return;
+          }
+          cancelTimer(key);
           callbackWasCalled = true;
           try {
-            callback.invoke(true);
-          } catch (Exception e) {
-              //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
+            callback.invoke(PLAY_RESULT_SUCCESS);
+          } catch(RuntimeException runtimeException) {
+            //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
           }
 
           if (!mixWithOthers) {
@@ -349,11 +370,14 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
       @Override
       public synchronized boolean onError(MediaPlayer mp, int what, int extra) {
         setOnPlay(false, key);
-        if (callbackWasCalled) return true;
+        if (callbackWasCalled) {
+          return true;
+        }
+        cancelTimer(key);
         callbackWasCalled = true;
         try {
-          callback.invoke(true);
-        } catch (Exception e) {
+          callback.invoke(PLAY_RESULT_FAILURE);
+        } catch(RuntimeException runtimeException) {
           //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
         }
 
@@ -363,8 +387,33 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
         return true;
       }
     });
-    player.start();
-    setOnPlay(true, key);
+    synchronized(this) {
+      player.start();
+      setOnPlay(true, key);
+      if (!player.isLooping()) {
+        // Fail safe. Schedule a timer 0.5 seconds after the sound should have been completed
+        // that will then call the callback if the timer has not yet been canceled by the
+        // onCompletion / onError so that if this happens the caller of play() will still get
+        // a callback and can then cleanup.
+        Timer timer = new Timer();
+        this.timerPool.put(key, timer);
+        try {
+          timer.schedule(new TimerTask() {
+            @Override
+            public synchronized void run() {
+              try {
+                callback.invoke(PLAY_RESULT_TIMED_OUT);
+              } catch(RuntimeException runtimeException) {
+                //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
+              }
+              cancelTimer(key);
+            }
+          }, player.getDuration() + 500);
+        } catch (IllegalArgumentException | IllegalStateException | NullPointerException e) {
+          Log.e("RNSoundModule", "timer not scheduled, Exception ", e);
+        }
+      }
+    }
   }
 
   @ReactMethod
