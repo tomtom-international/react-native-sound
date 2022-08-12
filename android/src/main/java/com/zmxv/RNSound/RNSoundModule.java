@@ -376,7 +376,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
         cancelTimer(key);
         callbackWasCalled = true;
         try {
-          callback.invoke(PLAY_RESULT_SUCCESS);
+          callback.invoke(PLAY_RESULT_FAILURE);
         } catch(RuntimeException runtimeException) {
           //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
         }
