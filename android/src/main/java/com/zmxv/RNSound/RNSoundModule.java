@@ -388,6 +388,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
       }
     });
     synchronized(this) {
+      cancelTimer(key);
       player.start();
       setOnPlay(true, key);
       if (!player.isLooping()) {
@@ -418,6 +419,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void pause(final Double key, final Callback callback) {
+    synchronized (this) {
+      cancelTimer(key);
+    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null && player.isPlaying()) {
       player.pause();
@@ -430,6 +434,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void stop(final Double key, Promise promise) {
+    synchronized (this) {
+      cancelTimer(key);
+    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null && player.isPlaying()) {
       player.pause();
@@ -446,6 +453,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void reset(final Double key) {
+    synchronized (this) {
+      cancelTimer(key);
+    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null) {
       player.reset();
@@ -454,6 +464,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void release(final Double key) {
+    synchronized (this) {
+      cancelTimer(key);
+    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null) {
       player.reset();

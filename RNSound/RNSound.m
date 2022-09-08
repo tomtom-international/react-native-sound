@@ -95,11 +95,7 @@ static int PLAY_RESULT_TIMED_OUT = 2;
             return;
         }
 
-        dispatch_source_t timer = [self timerForKey:key];
-        if (timer) {
-            dispatch_source_cancel(timer);
-            [[self timerPool] removeObjectForKey:key];
-        }
+        [self cancelTimer:key];
 
         [self setOnPlay:NO forPlayerKey:key];
         RCTResponseSenderBlock callback = [self callbackForKey:key];
@@ -118,11 +114,8 @@ static int PLAY_RESULT_TIMED_OUT = 2;
         if (key == nil) {
             return;
         }
-        dispatch_source_t timer = [self timerForKey:key];
-        if (timer) {
-            dispatch_source_cancel(timer);
-            [[self timerPool] removeObjectForKey:key];
-        }
+
+        [self cancelTimer:key];
 
         [self setOnPlay:NO forPlayerKey:key];
         RCTResponseSenderBlock callback = [self callbackForKey:key];
@@ -130,6 +123,14 @@ static int PLAY_RESULT_TIMED_OUT = 2;
             callback([NSArray arrayWithObjects:[NSNumber numberWithInt:PLAY_RESULT_FAILURE], nil]);
             [[self callbackPool] removeObjectForKey:key];
         }
+    }
+}
+
+- (void)cancelTimer:(nonnull NSNumber *)key {
+    dispatch_source_t timer = [self timerForKey:key];
+    if (timer) {
+        dispatch_source_cancel(timer);
+        [[self timerPool] removeObjectForKey:key];
     }
 }
 
@@ -278,6 +279,7 @@ RCT_EXPORT_METHOD(play
 
         [[self callbackPool] setObject:[callback copy] forKey:key];
         @synchronized(self) {
+            [self cancelTimer:key];
             if ([player play]) {
                 [self setOnPlay:YES forPlayerKey:key];
                 if (player.numberOfLoops == 0) {
@@ -310,6 +312,9 @@ RCT_EXPORT_METHOD(play
 RCT_EXPORT_METHOD(pause
                   : (nonnull NSNumber *)key withCallback
                   : (RCTResponseSenderBlock)callback) {
+    @synchronized(self) {
+        [self cancelTimer:key];
+    }
     AVAudioPlayer *player = [self playerForKey:key];
     if (player) {
         [player pause];
@@ -320,6 +325,9 @@ RCT_EXPORT_METHOD(pause
 RCT_EXPORT_METHOD(stop: (nonnull NSNumber *)key
                resolve: (RCTPromiseResolveBlock)resolve
                 reject: (RCTPromiseRejectBlock)reject) {
+    @synchronized(self) {
+        [self cancelTimer:key];
+    }
     AVAudioPlayer *player = [self playerForKey:key];
     if (player) {
         [player stop];
@@ -330,6 +338,7 @@ RCT_EXPORT_METHOD(stop: (nonnull NSNumber *)key
 
 RCT_EXPORT_METHOD(release : (nonnull NSNumber *)key) {
     @synchronized(self) {
+        [self cancelTimer:key];
         AVAudioPlayer *player = [self playerForKey:key];
         if (player) {
             [player stop];
