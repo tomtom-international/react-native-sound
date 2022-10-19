@@ -1,17 +1,19 @@
 package com.zmxv.RNSound;
 
-import android.app.Activity;
+import static android.os.Build.*;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.MediaPlayer;
 import android.media.MediaPlayer.OnCompletionListener;
 import android.media.MediaPlayer.OnErrorListener;
-import android.net.Uri;
-import android.os.Build;
+import android.os.Build.VERSION;
+import android.util.Log;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Callback;
@@ -23,7 +25,6 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
-import com.facebook.react.modules.core.ExceptionsManagerModule;
 
 import java.io.File;
 import java.util.HashMap;
@@ -31,8 +32,6 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.io.IOException;
-
-import android.util.Log;
 
 public class RNSoundModule extends ReactContextBaseJavaModule implements AudioManager.OnAudioFocusChangeListener {
   Map<Double, MediaPlayer> playerPool = new HashMap<>();
@@ -46,6 +45,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
   Boolean wasPlayingBeforeFocusChange = false;
   private AudioFocusRequest audioFocusRequest;
   private boolean useAudioFocus = true;
+  Boolean forcePhoneSpeakerOn = false;
 
   private static final int PLAY_RESULT_FAILURE = 0;
   private static final int PLAY_RESULT_SUCCESS = 1;
@@ -85,7 +85,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     MediaPlayer player = createMediaPlayer(fileName);
     Activity mCurrentActivity = getCurrentActivity();
 
-    if (options.hasKey("speed") && android.os.Build.VERSION.SDK_INT >= 23) {
+    if (options.hasKey("speed") && VERSION.SDK_INT >= 23) {
       player.setPlaybackParams(player.getPlaybackParams().setSpeed((float)options.getDouble("speed")));
     }
     if (player == null) {
@@ -253,7 +253,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
   private void abandonFocus() {
     if (useAudioFocus) {
       final AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      if (VERSION.SDK_INT >= VERSION_CODES.O) {
         if (audioFocusRequest != null) {
           audioManager.abandonAudioFocusRequest(audioFocusRequest);
           audioFocusRequest = null;
@@ -291,12 +291,11 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
       // Note 2: audio focus request audio attributes usage will be AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE to get
       // proper audio focus change for Android Auto.
       int mediaPlayerUsage = AudioAttributes.USAGE_MEDIA;
-      if (this.category.equals("Ring")) {
-          // force output to play over the phone speaker as per user setting
-          mediaPlayerUsage = AudioAttributes.USAGE_NOTIFICATION_RINGTONE;
-      } else if (this.carAudioSystem) {
+
+      if (this.carAudioSystem) {
           mediaPlayerUsage = AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE;
       }
+
       AudioAttributes mediaPlayerAudioAttributes = new AudioAttributes.Builder()
               .setUsage(mediaPlayerUsage)
               .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -305,7 +304,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
       if (useAudioFocus) {
           int audioFocusResult;
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          if (VERSION.SDK_INT >= VERSION_CODES.O) {
               AudioAttributes audioFocusRequestAudioAttributes = new AudioAttributes.Builder()
                       .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -389,6 +388,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     });
     synchronized(this) {
       cancelTimer(key);
+      if(forcePhoneSpeakerOn) {
+        forceSpeakerRoute(audioManager, player);
+      }
       player.start();
       setOnPlay(true, key);
       if (!player.isLooping()) {
@@ -534,7 +536,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void setSpeed(final Double key, final Float speed) {
-	if (android.os.Build.VERSION.SDK_INT < 23) {
+	if (VERSION.SDK_INT < 23) {
 	  Log.w("RNSoundModule", "setSpeed ignored due to sdk limit");
 	  return;
 	}
@@ -547,7 +549,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void setPitch(final Double key, final Float pitch) {
-    if (android.os.Build.VERSION.SDK_INT < 23) {
+    if (VERSION.SDK_INT < 23) {
       Log.w("RNSoundModule", "setPitch ignored due to sdk limit");
       return;
     }
@@ -576,19 +578,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     callback.invoke(player.getCurrentPosition() * .001, player.isPlaying());
   }
 
-  //turn speaker on
   @ReactMethod
-  public void setSpeakerphoneOn(final Double key, final Boolean speaker) {
-    MediaPlayer player = this.playerPool.get(key);
-    if (player != null) {
-      AudioManager audioManager = (AudioManager)this.context.getSystemService(this.context.AUDIO_SERVICE);
-      if(speaker){
-        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-      }else{
-        audioManager.setMode(AudioManager.MODE_NORMAL);
-      }
-      audioManager.setSpeakerphoneOn(speaker);
-    }
+  public void forcePhoneSpeaker(final Boolean forcePhoneSpeaker) {
+    this.forcePhoneSpeakerOn = forcePhoneSpeaker;
   }
 
   @ReactMethod
@@ -615,6 +607,18 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
               this.play(this.focusedPlayerKey, null);
               this.wasPlayingBeforeFocusChange = false;
             }
+        }
+      }
+    }
+  }
+
+  private void forceSpeakerRoute(AudioManager audioManager, MediaPlayer mediaPlayer)
+  {
+    AudioDeviceInfo[] audioDevices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+    for (AudioDeviceInfo audioDevice : audioDevices) {
+      if (audioDevice.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+        if (VERSION.SDK_INT >= VERSION_CODES.P) {
+          mediaPlayer.setPreferredDevice(audioDevice);
         }
       }
     }

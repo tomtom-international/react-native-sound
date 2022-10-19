@@ -125,7 +125,7 @@ Sound.prototype.pause = function(callback) {
   return this;
 };
 
-Sound.prototype.stop = async function(): Promise<boolean> {
+Sound.prototype.stop = async function() {
   if (this._loaded) {
     await RNSound.stop(this._key);
     this._playing = false;
@@ -272,15 +272,6 @@ Sound.prototype.setCurrentTime = function(value) {
   return this;
 };
 
-// android only
-Sound.prototype.setSpeakerphoneOn = function(value) {
-  if (IsAndroid) {
-    RNSound.setSpeakerphoneOn(this._key, value);
-  }
-};
-
-// ios only
-
 // This is deprecated.  Call the static one instead.
 
 Sound.prototype.setCategory = function(value) {
@@ -319,9 +310,9 @@ Sound.setMode = function(value) {
   }
 };
 
-Sound.setSpeakerPhone = function(value) {
-  if (!IsAndroid && !IsWindows) {
-    RNSound.setSpeakerPhone(value)
+Sound.forcePhoneSpeaker = function(value) {
+  if (IsAndroid) {
+    RNSound.forcePhoneSpeaker(value)
   }
 }
 
