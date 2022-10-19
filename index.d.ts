@@ -194,9 +194,9 @@ declare class Sound {
   setCategory(value: AVAudioSessionCategory): void
 
   /**
-   * @param forcePhoneSpeaker can be set to true to force audio only through phone speaker
+   * @param value can be set to true to force audio only through phone speaker
    */
-  setSpeakerphoneOn(forcePhoneSpeaker: Boolean): void
+  forcePhoneSpeaker(value: Boolean): void
 
   /**
    * Whether the player is playing or not.

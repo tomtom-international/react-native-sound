@@ -579,7 +579,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
   }
 
   @ReactMethod
-  public void setSpeakerphoneOn(final Boolean forcePhoneSpeaker) {
+  public void forcePhoneSpeaker(final Boolean forcePhoneSpeaker) {
     this.forcePhoneSpeakerOn = forcePhoneSpeaker;
   }
 

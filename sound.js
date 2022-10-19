@@ -310,9 +310,9 @@ Sound.setMode = function(value) {
   }
 };
 
-Sound.setSpeakerphoneOn = function(value) {
+Sound.forcePhoneSpeaker = function(value) {
   if (IsAndroid) {
-    RNSound.setSpeakerphoneOn(value)
+    RNSound.forcePhoneSpeaker(value)
   }
 }
 
