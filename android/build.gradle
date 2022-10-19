@@ -1,4 +1,6 @@
-apply plugin: 'com.android.library'
+def safeExtGet(prop, fallback) {
+  rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+}
 
 buildscript {
   repositories {
@@ -11,13 +13,15 @@ buildscript {
   }
 }
 
+apply plugin: 'com.android.library'
+
 android {
-  compileSdkVersion 31
+  compileSdkVersion safeExtGet('compileSdkVersion', 31)
   buildToolsVersion '30.0.3'
 
   defaultConfig {
-    minSdkVersion 23
-    targetSdkVersion 30
+    minSdkVersion safeExtGet('minSdkVersion', 23)
+    targetSdkVersion safeExtGet('targetSdkVersion', 30)
     versionCode 1
     versionName "1.0"
     ndk {
@@ -31,5 +35,5 @@ android {
   }
 
 dependencies {
-  implementation 'com.facebook.react:react-native:+'
+  implementation "com.facebook.react:react-native:${safeExtGet('reactNativeVersion', '+')}"
 }
