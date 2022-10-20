@@ -14,6 +14,7 @@ import android.media.MediaPlayer.OnCompletionListener;
 import android.media.MediaPlayer.OnErrorListener;
 import android.os.Build.VERSION;
 import android.util.Log;
+import android.support.v7.media.MediaRouter;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Callback;
@@ -25,6 +26,7 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
+import com.squareup.okhttp.Route;
 
 import java.io.File;
 import java.util.HashMap;
@@ -619,6 +621,15 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
       if (audioDevice.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
         if (VERSION.SDK_INT >= VERSION_CODES.P) {
           mediaPlayer.setPreferredDevice(audioDevice);
+        }
+        else{
+          MediaRouter router = MediaRouter.getInstance(context);;
+          for(MediaRouter.RouteInfo route: router.getRoutes()){
+            if(route.getDeviceType() == (int)MediaRouter.RouteInfo.PLAYBACK_TYPE_LOCAL){
+              router.selectRoute(route);
+              break;
+            }
+          }
         }
       }
     }
