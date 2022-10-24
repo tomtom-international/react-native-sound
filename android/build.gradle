@@ -17,7 +17,7 @@ apply plugin: 'com.android.library'
 
 android {
   compileSdkVersion safeExtGet('compileSdkVersion', 31)
-  buildToolsVersion afeExtGet('compileSdkVersion', '30.0.2')
+  buildToolsVersion safeExtGet('compileSdkVersion', '30.0.2')
 
   defaultConfig {
     minSdkVersion safeExtGet('minSdkVersion', 23)
@@ -32,12 +32,8 @@ android {
 
   repositories {
     mavenCentral()
-    google()
   }
 
 dependencies {
   implementation "com.facebook.react:react-native:+"
-  //noinspection GradleCompatible,GradleCompatible
-  implementation "com.android.support:mediarouter-v7:${safeExtGet('supportLibVersion', '+')}"
-
 }
