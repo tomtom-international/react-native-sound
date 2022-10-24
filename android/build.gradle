@@ -16,8 +16,8 @@ buildscript {
 apply plugin: 'com.android.library'
 
 android {
-  compileSdkVersion safeExtGet('compileSdkVersion', 31)
-  buildToolsVersion safeExtGet('compileSdkVersion', '30.0.2')
+  compileSdkVersion safeExtGet('compileSdkVersion', 30)
+  buildToolsVersion safeExtGet('buildToolsVersion', '30.0.2')
 
   defaultConfig {
     minSdkVersion safeExtGet('minSdkVersion', 23)
@@ -35,5 +35,5 @@ android {
   }
 
 dependencies {
-  implementation "com.facebook.react:react-native:+"
+  implementation "com.facebook.react:react-native:${safeExtGet('reactNativeVersion', '+')}"
 }
