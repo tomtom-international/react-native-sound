@@ -16,8 +16,8 @@ buildscript {
 apply plugin: 'com.android.library'
 
 android {
-  compileSdkVersion safeExtGet('compileSdkVersion', 30)
-  buildToolsVersion safeExtGet('buildToolsVersion', '30.0.2')
+  compileSdkVersion safeExtGet('compileSdkVersion', 31)
+  buildToolsVersion safeExtGet('buildToolsVersion', '30.0.3')
 
   defaultConfig {
     minSdkVersion safeExtGet('minSdkVersion', 23)
