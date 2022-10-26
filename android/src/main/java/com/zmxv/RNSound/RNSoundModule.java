@@ -292,7 +292,11 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
       // proper audio focus change for Android Auto.
       int mediaPlayerUsage = AudioAttributes.USAGE_MEDIA;
 
-      if (this.carAudioSystem) {
+      // Support new implementation of forcing audio through speaker only for android 9 and higher
+      if (forcePhoneSpeakerOn && VERSION.SDK_INT < VERSION_CODES.P) {
+        // force output to play over the phone speaker as per user setting
+        mediaPlayerUsage = AudioAttributes.USAGE_NOTIFICATION_RINGTONE;
+      } else if (this.carAudioSystem) {
           mediaPlayerUsage = AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE;
       }
 
@@ -388,7 +392,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     });
     synchronized(this) {
       cancelTimer(key);
-      if(forcePhoneSpeakerOn) {
+      if (forcePhoneSpeakerOn && VERSION.SDK_INT >= VERSION_CODES.P) {
         forceSpeakerRoute(audioManager, player);
       }
       player.start();
