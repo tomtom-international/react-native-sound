@@ -42,7 +42,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
   Boolean wasPlayingBeforeFocusChange = false;
   private AudioFocusRequest audioFocusRequest;
   private boolean useAudioFocus = true;
-  Boolean forcePhoneSpeakerOn = false;
 
   private static final int PLAY_RESULT_FAILURE = 0;
   private static final int PLAY_RESULT_SUCCESS = 1;
