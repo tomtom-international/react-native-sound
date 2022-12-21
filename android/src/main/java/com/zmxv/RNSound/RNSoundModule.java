@@ -26,10 +26,13 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.io.IOException;
 
 public class RNSoundModule extends ReactContextBaseJavaModule implements AudioManager.OnAudioFocusChangeListener {
   Map<Double, MediaPlayer> playerPool = new HashMap<>();
+  Map<Double, Timer> timerPool = new HashMap<>();
   ReactApplicationContext context;
   final static Object NULL = null;
   String category;
@@ -59,6 +62,14 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     reactContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
             .emit("onPlayChange", params);
+  }
+
+  private void cancelTimer(Double key) {
+    Timer timer = this.timerPool.get(key);
+    if (timer != null) {
+      timer.cancel();
+      this.timerPool.put(key, null);
+    }
   }
 
   @Override
@@ -252,19 +263,16 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void play(final Double key, final Callback callback) {
-    Log.d("RNSoundModule", "JBUG play");
     MediaPlayer player = this.playerPool.get(key);
     if (player == null) {
       setOnPlay(false, key);
       if (callback != null) {
-          Log.d("RNSoundModule", "JBUG no player");
           callback.invoke(PLAY_RESULT_FAILURE);
       }
       return;
     }
     if (player.isPlaying()) {
       if (callback != null) {
-          Log.d("RNSoundModule", "JBUG is playing");
           callback.invoke(PLAY_RESULT_FAILURE);
       }
       return;
@@ -341,6 +349,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
           if (callbackWasCalled) {
             return;
           }
+          cancelTimer(key);
           callbackWasCalled = true;
           try {
             callback.invoke(PLAY_RESULT_SUCCESS);
@@ -363,6 +372,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
         if (callbackWasCalled) {
           return true;
         }
+        cancelTimer(key);
         callbackWasCalled = true;
         try {
           callback.invoke(PLAY_RESULT_FAILURE);
@@ -376,13 +386,41 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
         return true;
       }
     });
-    Log.d("RNSoundModule", "JBUG player.start");
-    player.start();
-    setOnPlay(true, key);
+    synchronized(this) {
+      cancelTimer(key);
+      player.start();
+      setOnPlay(true, key);
+      if (!player.isLooping()) {
+        // Fail safe. Schedule a timer 0.5 seconds after the sound should have been completed
+        // that will then call the callback if the timer has not yet been canceled by the
+        // onCompletion / onError so that if this happens the caller of play() will still get
+        // a callback and can then cleanup.
+        Timer timer = new Timer();
+        this.timerPool.put(key, timer);
+        try {
+          timer.schedule(new TimerTask() {
+            @Override
+            public synchronized void run() {
+              try {
+                callback.invoke(PLAY_RESULT_TIMED_OUT);
+              } catch(RuntimeException runtimeException) {
+                //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
+              }
+              cancelTimer(key);
+            }
+          }, player.getDuration() + 500);
+        } catch (IllegalArgumentException | IllegalStateException | NullPointerException e) {
+          Log.e("RNSoundModule", "timer not scheduled, Exception ", e);
+        }
+      }
+    }
   }
 
   @ReactMethod
   public void pause(final Double key, final Callback callback) {
+    synchronized (this) {
+      cancelTimer(key);
+    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null && player.isPlaying()) {
       player.pause();
@@ -395,6 +433,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void stop(final Double key, Promise promise) {
+    synchronized (this) {
+      cancelTimer(key);
+    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null && player.isPlaying()) {
       player.pause();
@@ -411,6 +452,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void reset(final Double key) {
+    synchronized (this) {
+      cancelTimer(key);
+    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null) {
       player.reset();
@@ -419,6 +463,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void release(final Double key) {
+    synchronized (this) {
+      cancelTimer(key);
+    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null) {
       player.reset();
