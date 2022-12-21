@@ -1,39 +1,40 @@
 def safeExtGet(prop, fallback) {
-  rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
 }
 
 buildscript {
-  repositories {
-    google()
-    maven { url 'https://artifactory.navkit-pipeline.tt3.com/artifactory/maven-remotes' }
-  }
+    repositories {
+        google()
+        maven { url 'https://artifactory.tomtomgroup.com/artifactory/maven-remotes' }
+    }
 
-  dependencies {
-    classpath 'com.android.tools.build:gradle:4.2.1'
-  }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.2.1'
+    }
 }
 
 apply plugin: 'com.android.library'
 
 android {
-  compileSdkVersion safeExtGet('compileSdkVersion', 31)
-  buildToolsVersion safeExtGet('buildToolsVersion', '30.0.3')
+    compileSdkVersion safeExtGet('compileSdkVersion', 31)
+    buildToolsVersion safeExtGet('buildToolsVersion', '30.0.2')
 
-  defaultConfig {
-    minSdkVersion safeExtGet('minSdkVersion', 23)
-    targetSdkVersion safeExtGet('targetSdkVersion', 30)
-    versionCode 1
-    versionName "1.0"
-    ndk {
-      abiFilters "armeabi-v7a", "x86"
+    defaultConfig {
+        minSdkVersion safeExtGet('minSdkVersion', 23)
+        targetSdkVersion safeExtGet('targetSdkVersion', 29)
+        versionCode 1
+        versionName "1.0"
     }
-  }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
 
-  repositories {
+repositories {
     mavenCentral()
-  }
+}
 
 dependencies {
-  implementation "com.facebook.react:react-native:${safeExtGet('reactNativeVersion', '+')}"
+    implementation 'com.facebook.react:react-native:+'
 }

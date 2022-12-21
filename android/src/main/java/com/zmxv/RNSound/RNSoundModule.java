@@ -1,18 +1,15 @@
 package com.zmxv.RNSound;
 
-import static android.os.Build.*;
-
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
-import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.MediaPlayer;
 import android.media.MediaPlayer.OnCompletionListener;
 import android.media.MediaPlayer.OnErrorListener;
-import android.os.Build.VERSION;
+import android.os.Build;
 import android.util.Log;
 
 import com.facebook.react.bridge.Arguments;
@@ -29,13 +26,10 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.io.IOException;
 
 public class RNSoundModule extends ReactContextBaseJavaModule implements AudioManager.OnAudioFocusChangeListener {
   Map<Double, MediaPlayer> playerPool = new HashMap<>();
-  Map<Double, Timer> timerPool = new HashMap<>();
   ReactApplicationContext context;
   final static Object NULL = null;
   String category;
@@ -67,14 +61,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
             .emit("onPlayChange", params);
   }
 
-  private void cancelTimer(Double key) {
-    Timer timer = this.timerPool.get(key);
-    if (timer != null) {
-      timer.cancel();
-      this.timerPool.put(key, null);
-    }
-  }
-
   @Override
   public String getName() {
     return "RNSound";
@@ -85,7 +71,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     MediaPlayer player = createMediaPlayer(fileName);
     Activity mCurrentActivity = getCurrentActivity();
 
-    if (options.hasKey("speed") && VERSION.SDK_INT >= 23) {
+    if (options.hasKey("speed") && Build.VERSION.SDK_INT >= 23) {
       player.setPlaybackParams(player.getPlaybackParams().setSpeed((float)options.getDouble("speed")));
     }
     if (player == null) {
@@ -253,7 +239,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
   private void abandonFocus() {
     if (useAudioFocus) {
       final AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-      if (VERSION.SDK_INT >= VERSION_CODES.O) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         if (audioFocusRequest != null) {
           audioManager.abandonAudioFocusRequest(audioFocusRequest);
           audioFocusRequest = null;
@@ -266,16 +252,19 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void play(final Double key, final Callback callback) {
+    Log.d("RNSoundModule", "JBUG play");
     MediaPlayer player = this.playerPool.get(key);
     if (player == null) {
       setOnPlay(false, key);
       if (callback != null) {
+          Log.d("RNSoundModule", "JBUG no player");
           callback.invoke(PLAY_RESULT_FAILURE);
       }
       return;
     }
     if (player.isPlaying()) {
       if (callback != null) {
+          Log.d("RNSoundModule", "JBUG is playing");
           callback.invoke(PLAY_RESULT_FAILURE);
       }
       return;
@@ -292,10 +281,9 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
       // proper audio focus change for Android Auto.
       int mediaPlayerUsage = AudioAttributes.USAGE_MEDIA;
 
-      // Support new implementation of forcing audio through speaker only for android 9 and higher
-      if (forcePhoneSpeakerOn && VERSION.SDK_INT < VERSION_CODES.P) {
-        // force output to play over the phone speaker as per user setting
-        mediaPlayerUsage = AudioAttributes.USAGE_NOTIFICATION_RINGTONE;
+      if (this.category.equals("Ring")) {
+          // force output to play over the phone speaker as per user setting
+          mediaPlayerUsage = AudioAttributes.USAGE_NOTIFICATION_RINGTONE;
       } else if (this.carAudioSystem) {
           mediaPlayerUsage = AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE;
       }
@@ -308,7 +296,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
       if (useAudioFocus) {
           int audioFocusResult;
-          if (VERSION.SDK_INT >= VERSION_CODES.O) {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
               AudioAttributes audioFocusRequestAudioAttributes = new AudioAttributes.Builder()
                       .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -353,7 +341,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
           if (callbackWasCalled) {
             return;
           }
-          cancelTimer(key);
           callbackWasCalled = true;
           try {
             callback.invoke(PLAY_RESULT_SUCCESS);
@@ -376,7 +363,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
         if (callbackWasCalled) {
           return true;
         }
-        cancelTimer(key);
         callbackWasCalled = true;
         try {
           callback.invoke(PLAY_RESULT_FAILURE);
@@ -390,44 +376,13 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
         return true;
       }
     });
-    synchronized(this) {
-      cancelTimer(key);
-      if (forcePhoneSpeakerOn && VERSION.SDK_INT >= VERSION_CODES.P) {
-        forceSpeakerRoute(audioManager, player);
-      }
-      player.start();
-      setOnPlay(true, key);
-      if (!player.isLooping()) {
-        // Fail safe. Schedule a timer 0.5 seconds after the sound should have been completed
-        // that will then call the callback if the timer has not yet been canceled by the
-        // onCompletion / onError so that if this happens the caller of play() will still get
-        // a callback and can then cleanup.
-        Timer timer = new Timer();
-        this.timerPool.put(key, timer);
-        try {
-          timer.schedule(new TimerTask() {
-            @Override
-            public synchronized void run() {
-              try {
-                callback.invoke(PLAY_RESULT_TIMED_OUT);
-              } catch(RuntimeException runtimeException) {
-                //Catches the exception: java.lang.RuntimeException·Illegal callback invocation from native module
-              }
-              cancelTimer(key);
-            }
-          }, player.getDuration() + 500);
-        } catch (IllegalArgumentException | IllegalStateException | NullPointerException e) {
-          Log.e("RNSoundModule", "timer not scheduled, Exception ", e);
-        }
-      }
-    }
+    Log.d("RNSoundModule", "JBUG player.start");
+    player.start();
+    setOnPlay(true, key);
   }
 
   @ReactMethod
   public void pause(final Double key, final Callback callback) {
-    synchronized (this) {
-      cancelTimer(key);
-    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null && player.isPlaying()) {
       player.pause();
@@ -440,9 +395,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void stop(final Double key, Promise promise) {
-    synchronized (this) {
-      cancelTimer(key);
-    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null && player.isPlaying()) {
       player.pause();
@@ -459,9 +411,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void reset(final Double key) {
-    synchronized (this) {
-      cancelTimer(key);
-    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null) {
       player.reset();
@@ -470,9 +419,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void release(final Double key) {
-    synchronized (this) {
-      cancelTimer(key);
-    }
     MediaPlayer player = this.playerPool.get(key);
     if (player != null) {
       player.reset();
@@ -540,7 +486,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void setSpeed(final Double key, final Float speed) {
-	if (VERSION.SDK_INT < 23) {
+	if (Build.VERSION.SDK_INT < 23) {
 	  Log.w("RNSoundModule", "setSpeed ignored due to sdk limit");
 	  return;
 	}
@@ -553,7 +499,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void setPitch(final Double key, final Float pitch) {
-    if (VERSION.SDK_INT < 23) {
+    if (Build.VERSION.SDK_INT < 23) {
       Log.w("RNSoundModule", "setPitch ignored due to sdk limit");
       return;
     }
@@ -582,9 +528,19 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     callback.invoke(player.getCurrentPosition() * .001, player.isPlaying());
   }
 
+  //turn speaker on
   @ReactMethod
-  public void forcePhoneSpeaker(final Boolean forcePhoneSpeaker) {
-    this.forcePhoneSpeakerOn = forcePhoneSpeaker;
+  public void setSpeakerphoneOn(final Double key, final Boolean speaker) {
+    MediaPlayer player = this.playerPool.get(key);
+    if (player != null) {
+      AudioManager audioManager = (AudioManager)this.context.getSystemService(this.context.AUDIO_SERVICE);
+      if(speaker){
+        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+      }else{
+        audioManager.setMode(AudioManager.MODE_NORMAL);
+      }
+      audioManager.setSpeakerphoneOn(speaker);
+    }
   }
 
   @ReactMethod
@@ -611,18 +567,6 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
               this.play(this.focusedPlayerKey, null);
               this.wasPlayingBeforeFocusChange = false;
             }
-        }
-      }
-    }
-  }
-
-  private void forceSpeakerRoute(AudioManager audioManager, MediaPlayer mediaPlayer)
-  {
-    AudioDeviceInfo[] audioDevices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
-    for (AudioDeviceInfo audioDevice : audioDevices) {
-      if (audioDevice.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-        if (VERSION.SDK_INT >= VERSION_CODES.P) {
-          mediaPlayer.setPreferredDevice(audioDevice);
         }
       }
     }
