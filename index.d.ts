@@ -43,11 +43,6 @@ declare class Sound {
   static setCategory(category: AVAudioSessionCategory, mixWithOthers: boolean, carAudioSystem: boolean): void
 
   /**
-   * @param value can be set to true to force audio only through phone speaker
-   */
-  static forcePhoneSpeaker(value: Boolean): void
-
-  /**
    * Sets AVAudioSession mode, which works in conjunction with the category to determine audio mixing behavior.
    * Parameter options: "Default", "VoiceChat", "VideoChat", "GameChat", "VideoRecording", "Measurement", "MoviePlayback", "SpokenAudio".
    *
@@ -192,11 +187,6 @@ declare class Sound {
    * @param value
    */
   setCategory(value: AVAudioSessionCategory): void
-
-  /**
-   * @param value can be set to true to force audio only through phone speaker
-   */
-  forcePhoneSpeaker(value: Boolean): void
 
   /**
    * Whether the player is playing or not.
