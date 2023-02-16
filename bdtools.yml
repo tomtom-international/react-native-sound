@@ -1,0 +1,14 @@
+project: react-native-sound
+scan_type:
+  - FULL_SCAN
+include_folders:
+  - android
+  - RNSound
+  - scripts
+exclude_folders:
+  - windows
+detectors_included:
+  - NPM
+  - GIT
+passthrough:
+  - --detect.npm.dependency.types.excluded=DEV
