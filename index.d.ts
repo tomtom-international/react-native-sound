@@ -192,6 +192,12 @@ declare class Sound {
    * Whether the player is playing or not.
    */
   isPlaying(): boolean
+
+  /**
+   * Whether to use audio focus / audio session audio management
+   * @param enabled
+   */
+  setAudioManagement(enabled: boolean): void
 }
 
 export = Sound;
